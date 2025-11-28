@@ -38,6 +38,76 @@ const router = useRouter();
 const isGeneratingPdf = ref(false); // Buton durumu için
 const reportContentRef = ref<HTMLElement | null>(null); // PDF'e aktarılacak alan
 
+const isExportingCsv = ref(false); // ← YENİ: CSV export durumu
+
+
+const exportAnswersToCSV = async () => {
+  if (!resultData.value) {
+    toast.error("Sonuç verisi henüz yüklenmedi.");
+    return;
+  }
+
+  isExportingCsv.value = true;
+  const toastId = toast.info("CSV dosyası hazırlanıyor...", { timeout: false });
+
+  try {
+    // Backend'den cevap detaylarını al
+    const response = await apiClient.get(`/test-results/${props.assignmentId}/answer-analysis`);
+    const answers = response.data;
+
+    if (!answers || answers.length === 0) {
+      toast.dismiss(toastId);
+      toast.warning("İndirilecek cevap bulunamadı.");
+      isExportingCsv.value = false;
+      return;
+    }
+
+    // CSV içeriğini oluştur
+    let csvContent = "soru,cevap\n";
+
+    answers.forEach((answer: any, index: number) => {
+      const questionNumber = index + 1;
+      let answerValue = '';
+
+      // Psychometric cevapları sayıya çevir
+      if (answer.yourAnswer === 'Doğru' || answer.yourAnswer === 'True') {
+        answerValue = '1';
+      } else if (answer.yourAnswer === 'Yanlış' || answer.yourAnswer === 'False') {
+        answerValue = '2';
+      } else if (answer.yourAnswer === 'Fikrim Yok' || answer.yourAnswer === 'No Idea') {
+        answerValue = '0';
+      } else if (answer.yourAnswer === 'Cevaplanmamış') {
+        answerValue = '0'; // Boş cevaplar için 0
+      } else {
+        // Multiple choice için - metin cevap varsa 1, yoksa 0
+        answerValue = answer.yourAnswer !== 'Cevaplanmamış' ? '1' : '0';
+      }
+
+      csvContent += `${questionNumber},${answerValue}\n`;
+    });
+
+    // Blob oluştur ve indir
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `MMPI_Cevaplar_${resultData.value.candidate.fullName}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    toast.dismiss(toastId);
+    toast.success("CSV dosyası başarıyla indirildi.");
+  } catch (error: any) {
+    toast.dismiss(toastId);
+    console.error("CSV export error:", error);
+    toast.error("CSV dosyası oluşturulurken bir hata oluştu.");
+  } finally {
+    isExportingCsv.value = false;
+  }
+};
 
 // --- PDF İNDİRME METODU (Son Kontrollü Hali) ---
 const downloadPdfReport = async () => {
@@ -391,6 +461,15 @@ onUnmounted(() => {
             <i class="mdi mdi-refresh mr-2"></i>
             Yeniden Puanla
           </button>
+
+          <button @click="exportAnswersToCSV"
+                  :disabled="isExportingCsv"
+                  class="inline-flex items-center px-3 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="mdi mdi-file-delimited mr-2"></i>
+            <span v-if="isExportingCsv">Hazırlanıyor...</span>
+            <span v-else>CSV İndir</span>
+          </button>
+
 
           <button @click="downloadPdfReport"
                   :disabled="isGeneratingPdf"

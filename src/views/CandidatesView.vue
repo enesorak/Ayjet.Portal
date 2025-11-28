@@ -2,7 +2,7 @@
 import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter, RouterLink } from 'vue-router';
 import apiClient from '@/api/apiClient';
-import { useToast } from 'vue-toastification';
+import { notify } from '@/services/notificationService';
 import { resolveApiUrl } from '@/utils/urlHelper';
 
 // MODAL'LARIN IMPORT'LARI
@@ -11,7 +11,6 @@ import AssignTestModal from "@/components/TestAssignments/AssignTestModal.vue";
 import BulkImportModal from "@/components/Candidate/BulkImportModal.vue";
 
 const router = useRouter();
-const toast = useToast();
 
 // STATE TANIMLARI
 const candidates = ref<any[]>([]);
@@ -38,7 +37,10 @@ const allSelected = computed({
   }
 });
 
+// ============================================
 // API ÇAĞRILARI
+// ============================================
+
 const fetchCandidates = async (page = 1) => {
   loading.value = true;
   selectedCandidates.value = [];
@@ -52,8 +54,8 @@ const fetchCandidates = async (page = 1) => {
     const response = await apiClient.get('/candidates', { params });
     candidates.value = response.data.items;
     paginationData.value = response.data;
-  } catch (error) {
-    toast.error("Adaylar getirilirken hata oluştu.");
+  } catch {
+    // Interceptor zaten hatayı handle ediyor
   } finally {
     loading.value = false;
   }
@@ -76,13 +78,19 @@ const refreshData = async () => {
   ]);
 };
 
+// ============================================
 // TAB İŞLEMLERİ
+// ============================================
+
 const changeTab = (tab: 'active' | 'archived') => {
   activeTab.value = tab;
   fetchCandidates(1);
 };
 
+// ============================================
 // MODAL İŞLEMLERİ
+// ============================================
+
 const openCreateModal = () => {
   isEditMode.value = false;
   candidateToEdit.value = null;
@@ -95,7 +103,10 @@ const openEditModal = (candidate: any) => {
   showCandidateFormModal.value = true;
 };
 
-// EVENT HANDLER'LAR - Birleştirilmiş ve tek seferlik tanımlandı
+// ============================================
+// EVENT HANDLER'LAR
+// ============================================
+
 const handleCandidateSaved = async () => {
   showCandidateFormModal.value = false;
   await refreshData();
@@ -104,7 +115,7 @@ const handleCandidateSaved = async () => {
 const onAssignmentSuccess = async () => {
   showAssignModal.value = false;
   selectedCandidates.value = [];
-  toast.success("Testler adaylara başarıyla atandı.");
+  notify.custom.assigned('Testler');
   await fetchTabCounts();
 };
 
@@ -116,6 +127,7 @@ const onBulkImportSuccess = async () => {
 const handleArchiveStatusChange = async (candidate: any) => {
   const newStatus = !candidate.isArchived;
   const actionText = newStatus ? 'arşivlemek' : 'arşivden çıkarmak';
+
   if (confirm(`'${candidate.fullName}' adlı adayı ${actionText} istediğinizden emin misiniz?`)) {
     try {
       const command = {
@@ -123,10 +135,16 @@ const handleArchiveStatusChange = async (candidate: any) => {
         isArchived: newStatus
       };
       await apiClient.post(`/candidates/${candidate.id}/archive-status`, command);
-      toast.success(`Aday başarıyla ${actionText}ndi.`);
+
+      if (newStatus) {
+        notify.crud.archived('Aday');
+      } else {
+        notify.crud.unarchived('Aday');
+      }
+
       await refreshData();
-    } catch (error) {
-      toast.error("İşlem sırasında bir hata oluştu.");
+    } catch {
+      // Interceptor zaten hatayı handle ediyor
     }
   }
 };
@@ -134,15 +152,18 @@ const handleArchiveStatusChange = async (candidate: any) => {
 const handleDeleteCandidate = async (candidateId: string) => {
   try {
     await apiClient.delete(`/candidates/${candidateId}`);
-    toast.success("İşlem başarıyla tamamlandı.");
+    notify.crud.deleted('Aday');
     showCandidateFormModal.value = false;
     await refreshData();
-  } catch (error) {
-    toast.error("Silme işlemi sırasında bir hata oluştu.");
+  } catch {
+    // Interceptor zaten hatayı handle ediyor
   }
 };
 
+// ============================================
 // WATCHERS
+// ============================================
+
 let debounceTimer: number;
 watch(searchTerm, () => {
   clearTimeout(debounceTimer);
@@ -151,7 +172,10 @@ watch(searchTerm, () => {
 
 watch(pageSize, () => fetchCandidates(1));
 
+// ============================================
 // LIFECYCLE
+// ============================================
+
 onMounted(async () => {
   await refreshData();
 });
